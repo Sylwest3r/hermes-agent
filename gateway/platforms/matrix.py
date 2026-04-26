@@ -100,6 +100,23 @@ from gateway.platforms.helpers import ThreadParticipationTracker
 
 logger = logging.getLogger(__name__)
 
+
+def _safe_float_env(name: str, default: float) -> float:
+    """Return the float value of env var *name*, falling back to *default* on
+    any parse error instead of raising ValueError at adapter init time."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Matrix: env var %s=%r is not a valid number; using default %.2f",
+            name, raw, default,
+        )
+        return default
+
+
 # Matrix message size limit (4000 chars practical, spec has no hard limit
 # but clients render poorly above this).
 MAX_MESSAGE_LENGTH = 4000
@@ -272,11 +289,11 @@ class MatrixAdapter(BasePlatformAdapter):
 
         # Text batching: merge rapid successive messages (Telegram-style).
         # Matrix clients split long messages around 4000 chars.
-        self._text_batch_delay_seconds = float(
-            os.getenv("HERMES_MATRIX_TEXT_BATCH_DELAY_SECONDS", "0.6")
+        self._text_batch_delay_seconds = _safe_float_env(
+            "HERMES_MATRIX_TEXT_BATCH_DELAY_SECONDS", 0.6
         )
-        self._text_batch_split_delay_seconds = float(
-            os.getenv("HERMES_MATRIX_TEXT_BATCH_SPLIT_DELAY_SECONDS", "2.0")
+        self._text_batch_split_delay_seconds = _safe_float_env(
+            "HERMES_MATRIX_TEXT_BATCH_SPLIT_DELAY_SECONDS", 2.0
         )
         self._pending_text_batches: Dict[str, MessageEvent] = {}
         self._pending_text_batch_tasks: Dict[str, asyncio.Task] = {}

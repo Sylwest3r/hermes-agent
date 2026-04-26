@@ -1956,3 +1956,64 @@ class TestMatrixPresence:
         self.adapter._client = None
         result = await self.adapter.set_presence("online")
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# _safe_float_env — batch delay env var parsing
+# ---------------------------------------------------------------------------
+
+class TestMatrixBatchDelayEnvParsing:
+    """MatrixAdapter.__init__ must not raise ValueError on malformed env vars.
+
+    HERMES_MATRIX_TEXT_BATCH_DELAY_SECONDS and
+    HERMES_MATRIX_TEXT_BATCH_SPLIT_DELAY_SECONDS were previously parsed with
+    a bare float() call that would raise ValueError and prevent the adapter
+    from constructing when the env var contains any non-numeric string.
+    """
+
+    def _make_adapter_with_env(self, monkeypatch, delay=None, split_delay=None):
+        if delay is not None:
+            monkeypatch.setenv("HERMES_MATRIX_TEXT_BATCH_DELAY_SECONDS", delay)
+        else:
+            monkeypatch.delenv("HERMES_MATRIX_TEXT_BATCH_DELAY_SECONDS", raising=False)
+        if split_delay is not None:
+            monkeypatch.setenv("HERMES_MATRIX_TEXT_BATCH_SPLIT_DELAY_SECONDS", split_delay)
+        else:
+            monkeypatch.delenv("HERMES_MATRIX_TEXT_BATCH_SPLIT_DELAY_SECONDS", raising=False)
+        return _make_adapter()
+
+    def test_non_numeric_delay_uses_default(self, monkeypatch):
+        """Non-numeric HERMES_MATRIX_TEXT_BATCH_DELAY_SECONDS must not crash."""
+        adapter = self._make_adapter_with_env(monkeypatch, delay="disabled")
+        assert adapter._text_batch_delay_seconds == 0.6
+
+    def test_non_numeric_split_delay_uses_default(self, monkeypatch):
+        """Non-numeric HERMES_MATRIX_TEXT_BATCH_SPLIT_DELAY_SECONDS must not crash."""
+        adapter = self._make_adapter_with_env(monkeypatch, split_delay="off")
+        assert adapter._text_batch_split_delay_seconds == 2.0
+
+    def test_empty_delay_uses_default(self, monkeypatch):
+        """Empty env var falls back to default without crashing."""
+        adapter = self._make_adapter_with_env(monkeypatch, delay="")
+        assert adapter._text_batch_delay_seconds == 0.6
+
+    def test_valid_numeric_delay_is_respected(self, monkeypatch):
+        """A valid numeric string is parsed correctly."""
+        adapter = self._make_adapter_with_env(monkeypatch, delay="1.5")
+        assert adapter._text_batch_delay_seconds == 1.5
+
+    def test_valid_numeric_split_delay_is_respected(self, monkeypatch):
+        """A valid numeric string for split delay is parsed correctly."""
+        adapter = self._make_adapter_with_env(monkeypatch, split_delay="3.0")
+        assert adapter._text_batch_split_delay_seconds == 3.0
+
+    def test_zero_delay_disables_batching(self, monkeypatch):
+        """Zero is a valid value (disables batching)."""
+        adapter = self._make_adapter_with_env(monkeypatch, delay="0")
+        assert adapter._text_batch_delay_seconds == 0.0
+
+    def test_unset_uses_defaults(self, monkeypatch):
+        """Unset env vars produce the documented defaults."""
+        adapter = self._make_adapter_with_env(monkeypatch)
+        assert adapter._text_batch_delay_seconds == 0.6
+        assert adapter._text_batch_split_delay_seconds == 2.0
